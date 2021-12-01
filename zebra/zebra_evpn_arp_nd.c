@@ -578,6 +578,9 @@ void zebra_evpn_arp_nd_if_update(struct zebra_if *zif, bool enable)
  */
 void zebra_evpn_arp_nd_udp_sock_create(void)
 {
+	if (!(zevpn_arp_nd_info.flags & ZEBRA_EVPN_ARP_ND_FAILOVER))
+		return;
+
 	if (IS_IPADDR_V4(&zmh_info->es_originator_ip) &&
 	    zmh_info->es_originator_ip.ipaddr_v4.s_addr) {
 		struct sockaddr_in sin;
@@ -585,14 +588,15 @@ void zebra_evpn_arp_nd_udp_sock_create(void)
 
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_EVT)
 			zlog_debug("Create UDP sock for arp_nd redirect from %pI4",
-				   &zmh_info->es_originator_ip);
+				   &zmh_info->es_originator_ip.ipaddr_v4);
 		if (zevpn_arp_nd_info.udp_fd <= 0) {
 			zevpn_arp_nd_info.udp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
 			if (zevpn_arp_nd_info.udp_fd <= 0) {
 				flog_err(EC_LIB_SOCKET,
 					 "evpn arp_nd UDP sock fd %d bind to %pI4 errno %s",
-					 zevpn_arp_nd_info.udp_fd, &zmh_info->es_originator_ip,
+					 zevpn_arp_nd_info.udp_fd,
+					 &zmh_info->es_originator_ip.ipaddr_v4,
 					 safe_strerror(errno));
 				return;
 			}
@@ -611,7 +615,7 @@ void zebra_evpn_arp_nd_udp_sock_create(void)
 			flog_err(EC_LIB_SOCKET,
 				 "evpn arp_nd UDP sock fd %d bind to %pI4 errno %s",
 				 zevpn_arp_nd_info.udp_fd,
-				 &zmh_info->es_originator_ip,
+				 &zmh_info->es_originator_ip.ipaddr_v4,
 				 safe_strerror(errno));
 			close(zevpn_arp_nd_info.udp_fd);
 			zevpn_arp_nd_info.udp_fd = -1;
