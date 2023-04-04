@@ -243,7 +243,8 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 		return 0;
 	}
 
-	acc_bd = zebra_evpn_acc_vl_find(vlan, zif->ifp);
+	/* Resolve access-BD using bridge context, not the member port itself. */
+	acc_bd = zebra_evpn_acc_vl_find(vlan, zif->brslave_info.br_if);
 	if (!acc_bd || !acc_bd->zevpn) {
 		++zevpn_arp_nd_info.stat.vni_missing;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
