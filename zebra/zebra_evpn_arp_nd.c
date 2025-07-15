@@ -125,6 +125,7 @@ static void zebra_evpn_arp_nd_udp_send(struct in_addr vtep_ip, uint8_t *data,
 				       int len)
 {
 	struct sockaddr_in sin;
+	ssize_t sent_len;
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
@@ -135,8 +136,13 @@ static void zebra_evpn_arp_nd_udp_send(struct in_addr vtep_ip, uint8_t *data,
 	sin.sin_port = htons(ZEBRA_EVPN_VXLAN_UDP_PORT);
 	sin.sin_addr = vtep_ip;
 
-	sendto(zevpn_arp_nd_info.udp_fd, data, len, 0, (struct sockaddr *)&sin,
-	       sizeof(sin));
+	sent_len = sendto(zevpn_arp_nd_info.udp_fd, data, len, 0, (struct sockaddr *)&sin,
+			  sizeof(sin));
+	if (sent_len < 0) {
+		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
+			zlog_debug("evpn arp_nd UDP sendto %pI4 failed: %s",
+			   &vtep_ip, safe_strerror(errno));
+	}
 }
 #endif
 
@@ -689,8 +695,13 @@ void zebra_evpn_arp_nd_failover_enable(void)
 	/* If socket is already open, nothing to do.
 	 * TODO: rebuild sock if it's open and is bound to an
 	 * address that doesn't match the current originator_ip */
-	if (zevpn_arp_nd_info.flags & ZEBRA_EVPN_ARP_ND_FAILOVER)
-		return;
+	if (zevpn_arp_nd_info.flags & ZEBRA_EVPN_ARP_ND_FAILOVER) {
+		/*disable will close socket and unset all interface
+                 * for arp_nd_redirect*/
+		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_EVT)
+			zlog_debug("Disable arp_nd failover as socket needs to be binded");
+		zebra_evpn_arp_nd_failover_disable();
+	}
 
 	if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_EVT)
 		zlog_debug("Enable arp_nd failover");
