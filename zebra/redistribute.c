@@ -627,9 +627,9 @@ void zebra_interface_address_add_update(struct interface *ifp,
 
 	router_id_add_address(ifc);
 
-	frr_each (zserv_client_list, &zrouter.client_list, client) {
 	if (if_is_loopback(ifp))
 		zebra_evpn_arp_nd_failover_enable();
+
 	frr_each (zserv_client_list, &zrouter.client_list, client) {
 		/* Do not send unsolicited messages to synchronous clients. */
 		if (client->synchronous)

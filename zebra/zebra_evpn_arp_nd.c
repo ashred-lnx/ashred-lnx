@@ -600,26 +600,11 @@ void zebra_evpn_arp_nd_if_update(struct zebra_if *zif, bool enable)
  */
 void zebra_evpn_arp_nd_udp_sock_create(void)
 {
-	struct interface *ifp;
-	struct prefix lo_p;
-	struct connected *ifc = NULL;
 	struct sockaddr_in sin;
 	int reuse = 1;
 
 	if (!IS_IPADDR_V4(&zmh_info->es_originator_ip) ||
 	    !zmh_info->es_originator_ip.ipaddr_v4.s_addr)
-		goto close_sock;
-
-	lo_p.family = AF_INET;
-	lo_p.prefixlen = IPV4_MAX_BITLEN;
-	lo_p.u.prefix4 = zmh_info->es_originator_ip.ipaddr_v4;
-
-	ifp = if_lookup_by_name("lo", VRF_DEFAULT);
-	if (!ifp)
-		goto close_sock;
-
-	ifc = connected_lookup_prefix_exact(ifp, &lo_p);
-	if (!ifc)
 		goto close_sock;
 
 	if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_EVT)
@@ -644,6 +629,20 @@ void zebra_evpn_arp_nd_udp_sock_create(void)
 	sin.sin_family = AF_INET;
 	sin.sin_addr = zmh_info->es_originator_ip.ipaddr_v4;
 	if (bind(zevpn_arp_nd_info.udp_fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+#ifdef IP_FREEBIND
+		int freebind = 1;
+
+		/* In netns/topotest setups the source VTEP IP may not be
+		 * configured on loopback yet. Retry bind with freebind.
+		 */
+		if (errno == EADDRNOTAVAIL
+		    && setsockopt(zevpn_arp_nd_info.udp_fd, IPPROTO_IP,
+				  IP_FREEBIND, (void *)&freebind,
+				  sizeof(freebind)) == 0
+		    && bind(zevpn_arp_nd_info.udp_fd,
+			    (struct sockaddr *)&sin, sizeof(sin)) == 0)
+			goto bind_ok;
+#endif
 		flog_err(EC_LIB_SOCKET, "evpn arp_nd UDP sock fd %d bind to %pI4 errno %s",
 			 zevpn_arp_nd_info.udp_fd, &zmh_info->es_originator_ip.ipaddr_v4,
 			 safe_strerror(errno));
@@ -651,6 +650,7 @@ void zebra_evpn_arp_nd_udp_sock_create(void)
 		zevpn_arp_nd_info.udp_fd = -1;
 	}
 
+bind_ok:
 	if (zevpn_arp_nd_info.udp_fd > 0)
 		zevpn_arp_nd_info.flags |= ZEBRA_EVPN_ARP_ND_FAILOVER;
 	return;
@@ -685,8 +685,8 @@ static void zebra_evpn_arp_nd_if_update_all(bool enable)
 /* ARP redirect for fast failover is enabled on the first local ES add */
 void zebra_evpn_arp_nd_failover_enable(void)
 {
-	if (!CHECK_FLAG(zmh_info->flags, ZEBRA_EVPN_MH_ENABLE))
-	    return;
+	if (!zmh_info)
+		return;
 
 	/* If fast failover is not enabled there is nothing to do */
 	if (zmh_info->flags & ZEBRA_EVPN_MH_REDIRECT_OFF)

@@ -648,12 +648,14 @@ def get_arp_nd_redirect_stats(dut):
     if not out:
         return "empty output from show evpn arp-nd-redirect"
 
-    if "EVPN ARP-reply/NA redirect: enabled" not in out:
-        return "arp-nd redirect feature is not enabled"
+    if not re.search(r"EVPN ARP-reply/NA redirect:\s+enabled", out):
+        return f"arp-nd redirect feature is not enabled; output: {out}"
 
     patterns = {
-        "arp": r"IPv4 ARP replies:\s+(\d+)",
-        "na": r"IPv6 neighbor advertisements:\s+(\d+)",
+        # Older output used "ARP replies"/"neighbor advertisements";
+        # newer output uses "ARP"/"neighbor discovery".
+        "arp": r"IPv4 ARP(?: replies)?:\s+(\d+)",
+        "na": r"IPv6 neighbor (?:advertisements|discovery):\s+(\d+)",
         "redirect": r"Redirected packets:\s+(\d+)",
         "not_ready": r"Not ready:\s+(\d+)",
         "vni_missing": r"VNI missing:\s+(\d+)",
