@@ -17,6 +17,7 @@ test_evpn_mh.py: Testing EVPN multihoming
 import os
 import sys
 import subprocess
+import re
 from functools import partial
 
 import pytest
@@ -636,6 +637,115 @@ def ping_anycast_gw(tgen):
             host.logger.debug(
                 "%s: arping on %s for %s returned: %s", name, intf, ipaddr, stdout
             )
+
+
+def get_arp_nd_redirect_stats(dut):
+    """
+    Read and parse ARP/ND redirect counters from zebra CLI output.
+    Returns a dict on success, else an error string.
+    """
+    out = dut.vtysh_cmd("show evpn arp-nd-redirect")
+    if not out:
+        return "empty output from show evpn arp-nd-redirect"
+
+    if "EVPN ARP-reply/NA redirect: enabled" not in out:
+        return "arp-nd redirect feature is not enabled"
+
+    patterns = {
+        "arp": r"IPv4 ARP replies:\s+(\d+)",
+        "na": r"IPv6 neighbor advertisements:\s+(\d+)",
+        "redirect": r"Redirected packets:\s+(\d+)",
+        "not_ready": r"Not ready:\s+(\d+)",
+        "vni_missing": r"VNI missing:\s+(\d+)",
+        "mac_missing": r"MAC missing:\s+(\d+)",
+        "es_non_local": r"Dest is not local ES:\s+(\d+)",
+        "es_up": r"Dest ES oper-up:\s+(\d+)",
+    }
+
+    stats = {}
+    for key, pattern in patterns.items():
+        m = re.search(pattern, out)
+        if not m:
+            return f"failed to parse {key} from output: {out}"
+        stats[key] = int(m.group(1))
+
+    return stats
+
+
+def send_unicast_arp_reply(host, src_mac, dst_mac, src_ip, dst_ip, count=5):
+    """
+    Inject unicast ARP replies toward dst_mac from host torbond.
+    """
+    python3_path = get_topogen().net.get_exec_path(["python3", "python"])
+    script_path = os.path.abspath(os.path.join(CWD, "../lib/scapy_sendpkt.py"))
+
+    pkt = (
+        f'Ether(dst="{dst_mac}",src="{src_mac}")/'
+        f'ARP(op=2,hwsrc="{src_mac}",psrc="{src_ip}",hwdst="{dst_mac}",pdst="{dst_ip}")'
+    )
+    cmd = [
+        python3_path,
+        script_path,
+        "--imports=Ether,ARP",
+        "--interface=torbond",
+        pkt,
+    ]
+
+    for _ in range(count):
+        host.cmd_status(cmd, warn=False, stderr=subprocess.STDOUT)
+
+
+def test_evpn_arp_nd_redirect_basic():
+    """
+    Validate that ARP-reply redirection counters increase when a local ES
+    destination is oper-down and packets are received on another local ES.
+    """
+    tgen = get_topogen()
+
+    if tgen.routers_have_failure():
+        pytest.skip(tgen.errors)
+
+    dut = tgen.gears["torm12"]
+    tx_host = tgen.net.hosts["hostd11"]
+
+    # Seed host MAC/FDB state before checking redirect behavior.
+    ping_anycast_gw(tgen)
+
+    base_stats = get_arp_nd_redirect_stats(dut)
+    assert isinstance(base_stats, dict), base_stats
+
+    try:
+        # Destination host ES on torm12 becomes oper-down.
+        dut.run("ip link set dev torm12-eth3 down")
+        # Force hostd11 egress path through torm12.
+        tx_host.run("ip link set dev hostd11-eth0 down")
+
+        def _redirected():
+            send_unicast_arp_reply(
+                tx_host,
+                src_mac="00:00:00:00:00:11",
+                dst_mac="00:00:00:00:00:12",
+                src_ip="45.0.0.11",
+                dst_ip="45.0.0.12",
+                count=6,
+            )
+
+            curr = get_arp_nd_redirect_stats(dut)
+            if not isinstance(curr, dict):
+                return curr
+
+            if curr["arp"] <= base_stats["arp"]:
+                return f"ARP reply counter did not increase: base={base_stats} curr={curr}"
+            if curr["redirect"] <= base_stats["redirect"]:
+                return f"Redirect counter did not increase: base={base_stats} curr={curr}"
+            return None
+
+        _, result = topotest.run_and_expect(_redirected, None, count=20, wait=1)
+        assertmsg = '"torm12" arp-nd redirect counters did not increase as expected'
+        assert result is None, assertmsg
+    finally:
+        tx_host.run("ip link set dev hostd11-eth0 up")
+        dut.run("ip link set dev torm12-eth3 up")
 
 
 def check_mac(dut, vni, mac, m_type, esi, intf, ping_gw=False, tgen=None):
