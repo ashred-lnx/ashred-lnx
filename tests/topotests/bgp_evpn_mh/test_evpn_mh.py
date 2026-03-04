@@ -723,19 +723,15 @@ def test_evpn_arp_nd_redirect_basic():
 
     _, enable_err = topotest.run_and_expect(_wait_redirect_enabled, None, count=10, wait=1)
     if enable_err is not None:
-        # Re-trigger address add handling (which re-evaluates ARP/ND failover
-        # enablement) by bouncing DUT loopback IPv4 once.
-        lo_out = dut.run("ip -4 -o addr show dev lo")
-        lo_ipv4 = None
-        for line in lo_out.splitlines():
-            fields = line.split()
-            if "inet" in fields:
-                lo_ipv4 = fields[fields.index("inet") + 1]
-                break
-        if lo_ipv4:
-            dut.run(f"ip addr del {lo_ipv4} dev lo")
-            dut.run(f"ip addr add {lo_ipv4} dev lo")
-
+        # Re-trigger first-local-ES handling by re-applying ES config on one
+        # access bond interface. This path calls arp/nd failover enablement.
+        dut.vtysh_cmd(
+            "conf\n"
+            "interface hostbond1\n"
+            "no evpn mh es-id 1\n"
+            "evpn mh es-id 1\n"
+            "evpn mh es-sys-mac 44:38:39:ff:ff:01"
+        )
         _, enable_err = topotest.run_and_expect(_wait_redirect_enabled, None, count=40, wait=1)
     assert enable_err is None, enable_err
 
