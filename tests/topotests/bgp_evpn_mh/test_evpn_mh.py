@@ -713,6 +713,17 @@ def test_evpn_arp_nd_redirect_basic():
     # Seed host MAC/FDB state before checking redirect behavior.
     ping_anycast_gw(tgen)
 
+    # Redirect enablement can lag initial topology bring-up. Poll until
+    # zebra reports the feature enabled before asserting counters.
+    def _wait_redirect_enabled():
+        curr = get_arp_nd_redirect_stats(dut)
+        if isinstance(curr, dict):
+            return None
+        return curr
+
+    _, enable_err = topotest.run_and_expect(_wait_redirect_enabled, None, count=40, wait=1)
+    assert enable_err is None, enable_err
+
     base_stats = get_arp_nd_redirect_stats(dut)
     assert isinstance(base_stats, dict), base_stats
 
