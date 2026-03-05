@@ -683,12 +683,13 @@ def send_unicast_arp_reply(host, src_mac, dst_mac, src_ip, dst_ip, count=5):
 
     pkt = (
         f'Ether(dst="{dst_mac}",src="{src_mac}")/'
+        f'Dot1Q(vlan=1000)/'
         f'ARP(op=2,hwsrc="{src_mac}",psrc="{src_ip}",hwdst="{dst_mac}",pdst="{dst_ip}")'
     )
     cmd = [
         python3_path,
         script_path,
-        "--imports=Ether,ARP",
+        "--imports=Ether,Dot1Q,ARP",
         "--interface=torbond",
         pkt,
     ]
