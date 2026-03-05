@@ -695,7 +695,9 @@ def send_unicast_arp_reply(host, src_mac, dst_mac, src_ip, dst_ip, count=5):
 
     for _ in range(count):
         rc, stdout, _ = host.cmd_status(cmd, warn=False, stderr=subprocess.STDOUT)
-        if rc != 0:
+        # scapy_sendpkt.py returns rc=2 when no L2 reply is received.
+        # For unicast ARP reply injection we don't require a response.
+        if rc not in (0, 2):
             return f"scapy_sendpkt failed rc={rc}: {stdout}"
 
     return None
