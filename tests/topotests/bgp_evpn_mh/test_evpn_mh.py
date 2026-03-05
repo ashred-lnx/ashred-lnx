@@ -753,7 +753,7 @@ def test_evpn_arp_nd_redirect_basic():
         # Destination host ES on torm12 becomes oper-down.
         dut.run("ip link set dev torm12-eth3 down")
         # Force hostd11 egress path through torm12.
-        tx_host.run("ip link set dev hostd11-eth0 down")
+        tx_host.cmd("ip link set dev hostd11-eth0 down")
 
         def _redirected():
             send_unicast_arp_reply(
@@ -779,7 +779,7 @@ def test_evpn_arp_nd_redirect_basic():
         assertmsg = '"torm12" arp-nd redirect counters did not increase as expected'
         assert result is None, assertmsg
     finally:
-        tx_host.run("ip link set dev hostd11-eth0 up")
+        tx_host.cmd("ip link set dev hostd11-eth0 up")
         dut.run("ip link set dev torm12-eth3 up")
 
 
