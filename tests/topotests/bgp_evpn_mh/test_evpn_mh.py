@@ -786,6 +786,17 @@ def test_evpn_arp_nd_redirect_basic():
             return None
 
         _, result = topotest.run_and_expect(_redirected, None, count=20, wait=1)
+        if result is not None:
+            diag = (
+                "\n--- torm12 diagnostics ---\n"
+                "show evpn arp-nd-redirect:\n"
+                f"{dut.vtysh_cmd('show evpn arp-nd-redirect')}\n"
+                "show evpn access-vlan:\n"
+                f"{dut.vtysh_cmd('show evpn access-vlan')}\n"
+                "show evpn mac vni 1000:\n"
+                f"{dut.vtysh_cmd('show evpn mac vni 1000')}\n"
+            )
+            result = f"{result}{diag}"
         assertmsg = '"torm12" arp-nd redirect counters did not increase as expected'
         assert result is None, f"{assertmsg}: {result}"
     finally:
