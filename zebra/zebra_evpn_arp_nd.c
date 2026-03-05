@@ -226,6 +226,7 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 {
 	struct ethhdr *ethh = (struct ethhdr *)data;
 	struct zebra_evpn_access_bd *acc_bd;
+	struct zebra_evpn *zevpn;
 	struct zebra_mac *zmac;
 	struct zebra_evpn_es *es;
 	struct in_addr nh;
@@ -281,7 +282,21 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 	/* Resolve access-BD using bridge context, not the member port itself. */
 	if (!acc_bd || !acc_bd->zevpn)
 		acc_bd = zebra_evpn_acc_vl_find(vid, zif->brslave_info.br_if);
-	if (!acc_bd || !acc_bd->zevpn) {
+	if (!acc_bd) {
+		++zevpn_arp_nd_info.stat.vni_missing;
+		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
+			zlog_debug("evpn arp_nd on %s (bridge %s) vlan %d; access-vlan mapping missing",
+				   zif->ifp->name, zif->brslave_info.br_if->name, vid);
+		return 0;
+	}
+
+	/* Resolve EVPN context robustly: use direct pointer when present,
+	 * otherwise fall back to VNI lookup from the access-bd.
+	 */
+	zevpn = acc_bd->zevpn;
+	if (!zevpn && acc_bd->vni)
+		zevpn = zebra_evpn_lookup(acc_bd->vni);
+	if (!zevpn) {
 		++zevpn_arp_nd_info.stat.vni_missing;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
 			zlog_debug("evpn arp_nd on %s (bridge %s) vlan %d; access-vlan:vni mapping missing",
@@ -290,13 +305,13 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 	}
 
 	/* MAC lookup in EVPN table, not local-mac cache */
-	zmac = zebra_evpn_mac_lookup(acc_bd->zevpn,
+	zmac = zebra_evpn_mac_lookup(zevpn,
 				     (struct ethaddr *)ethh->h_dest);
 	if (!zmac) {
 		++zevpn_arp_nd_info.stat.mac_missing;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
 			zlog_debug("evpn arp_nd on %s vni %d; mac missing",
-				   zif->ifp->name, acc_bd->zevpn->vni);
+				   zif->ifp->name, zevpn->vni);
 		return 0;
 	}
 
@@ -306,7 +321,7 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 		++zevpn_arp_nd_info.stat.es_non_local;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
 			zlog_debug("evpn arp_nd on %s vni %d; mac dest is not a local ES",
-				   zif->ifp->name, acc_bd->zevpn->vni);
+				   zif->ifp->name, zevpn->vni);
 		return 0;
 	}
 
@@ -314,7 +329,7 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 		++zevpn_arp_nd_info.stat.es_up;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
 			zlog_debug("evpn arp_nd on %s vni %d; mac dest ES is oper-up",
-				   zif->ifp->name, acc_bd->zevpn->vni);
+				   zif->ifp->name, zevpn->vni);
 		return 0;
 	}
 
@@ -326,12 +341,12 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 	if (!nh.s_addr) {
 		++zevpn_arp_nd_info.stat.nh_missing;
 		zlog_debug("evpn arp_nd on %s vni %d; no ES peers",
-			   zif->ifp->name, acc_bd->zevpn->vni);
+			   zif->ifp->name, zevpn->vni);
 		return 0;
 	}
 
 
-	zebra_evpn_arp_nd_vxlan_encap(acc_bd->zevpn, nh, data, len);
+	zebra_evpn_arp_nd_vxlan_encap(zevpn, nh, data, len);
 
 	return 0;
 }
