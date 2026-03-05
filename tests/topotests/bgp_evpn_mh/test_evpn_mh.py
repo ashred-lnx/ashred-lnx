@@ -694,7 +694,11 @@ def send_unicast_arp_reply(host, src_mac, dst_mac, src_ip, dst_ip, count=5):
     ]
 
     for _ in range(count):
-        host.cmd_status(cmd, warn=False, stderr=subprocess.STDOUT)
+        rc, stdout, _ = host.cmd_status(cmd, warn=False, stderr=subprocess.STDOUT)
+        if rc != 0:
+            return f"scapy_sendpkt failed rc={rc}: {stdout}"
+
+    return None
 
 
 def test_evpn_arp_nd_redirect_basic():
@@ -756,7 +760,7 @@ def test_evpn_arp_nd_redirect_basic():
         tx_host.cmd("ip link set dev hostd11-eth0 down")
 
         def _redirected():
-            send_unicast_arp_reply(
+            send_err = send_unicast_arp_reply(
                 tx_host,
                 src_mac="00:00:00:00:00:11",
                 dst_mac="00:00:00:00:00:12",
@@ -764,6 +768,8 @@ def test_evpn_arp_nd_redirect_basic():
                 dst_ip="45.0.0.12",
                 count=6,
             )
+            if send_err is not None:
+                return send_err
 
             curr = get_arp_nd_redirect_stats(dut)
             if not isinstance(curr, dict):
