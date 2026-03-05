@@ -723,6 +723,13 @@ def test_evpn_arp_nd_redirect_basic():
 
     _, enable_err = topotest.run_and_expect(_wait_redirect_enabled, None, count=10, wait=1)
     if enable_err is not None:
+        # Ensure loopback carries the current vxlan local VTEP-IP so zebra can
+        # bind the redirect UDP socket source.
+        vx_info = dut.run("ip -d -4 link show dev vx-1000")
+        m = re.search(r"\blocal\s+(\d+\.\d+\.\d+\.\d+)\b", vx_info)
+        if m:
+            dut.run(f"ip addr add {m.group(1)}/32 dev lo")
+
         # Re-trigger first-local-ES handling by re-applying ES config on one
         # access bond interface. This path calls arp/nd failover enablement.
         dut.vtysh_cmd(
