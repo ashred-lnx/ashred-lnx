@@ -230,6 +230,7 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 	struct zebra_evpn_es *es;
 	struct in_addr nh;
 	vlanid_t vid = vlan;
+	vlanid_t map_vid;
 
 	zebra_evpn_arp_nd_pkt_dump(zif, vlan, data, len);
 
@@ -263,15 +264,23 @@ static int zebra_evpn_arp_nd_proc(struct zebra_if *zif, uint16_t vlan,
 		return 0;
 	}
 
-	/* VLAN metadata can be absent for untagged packets. Fall back to an
-	 * interface VLAN membership entry (typically the access/PVID VLAN).
+	/* VLAN metadata can be absent for untagged packets. Try interface VLAN
+	 * memberships and pick the first one that has an access-vlan->VNI map.
 	 */
-	if (vid == 0 && bf_is_inited(zif->vlan_bitmap))
-		bf_for_each_set_bit(zif->vlan_bitmap, vid, IF_VLAN_BITMAP_MAX)
-			break;
+	acc_bd = NULL;
+	if (vid == 0 && bf_is_inited(zif->vlan_bitmap)) {
+		bf_for_each_set_bit(zif->vlan_bitmap, map_vid, IF_VLAN_BITMAP_MAX) {
+			acc_bd = zebra_evpn_acc_vl_find(map_vid, zif->brslave_info.br_if);
+			if (acc_bd && acc_bd->zevpn) {
+				vid = map_vid;
+				break;
+			}
+		}
+	}
 
 	/* Resolve access-BD using bridge context, not the member port itself. */
-	acc_bd = zebra_evpn_acc_vl_find(vid, zif->brslave_info.br_if);
+	if (!acc_bd || !acc_bd->zevpn)
+		acc_bd = zebra_evpn_acc_vl_find(vid, zif->brslave_info.br_if);
 	if (!acc_bd || !acc_bd->zevpn) {
 		++zevpn_arp_nd_info.stat.vni_missing;
 		if (IS_ZEBRA_DEBUG_EVPN_MH_ARP_ND_PKT)
