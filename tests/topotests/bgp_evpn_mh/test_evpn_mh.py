@@ -760,6 +760,8 @@ def test_evpn_arp_nd_redirect_basic():
         dut.run("ip link set dev torm12-eth3 down")
         # Force hostd11 egress path through torm12.
         tx_host.cmd("ip link set dev hostd11-eth0 down")
+        # Re-prime host/FDB state after link changes so VNI lookup can succeed.
+        ping_anycast_gw(tgen)
 
         def _redirected():
             send_err = send_unicast_arp_reply(
@@ -785,7 +787,7 @@ def test_evpn_arp_nd_redirect_basic():
 
         _, result = topotest.run_and_expect(_redirected, None, count=20, wait=1)
         assertmsg = '"torm12" arp-nd redirect counters did not increase as expected'
-        assert result is None, assertmsg
+        assert result is None, f"{assertmsg}: {result}"
     finally:
         tx_host.cmd("ip link set dev hostd11-eth0 up")
         dut.run("ip link set dev torm12-eth3 up")
