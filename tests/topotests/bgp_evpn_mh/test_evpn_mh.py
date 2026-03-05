@@ -713,6 +713,10 @@ def test_evpn_arp_nd_redirect_basic():
     # Seed host MAC/FDB state before checking redirect behavior.
     ping_anycast_gw(tgen)
 
+    # Debug aid: explicitly clear redirect-off in case config/state drift
+    # leaves fast-failover disabled in this environment.
+    dut.vtysh_cmd("conf\nno evpn mh redirect-off\nend")
+
     # Redirect enablement can lag initial topology bring-up. Poll until
     # zebra reports the feature enabled before asserting counters.
     def _wait_redirect_enabled():
